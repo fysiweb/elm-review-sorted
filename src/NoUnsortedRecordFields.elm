@@ -25,12 +25,22 @@ import Review.Rule exposing (Error, Rule)
 
 ## Fail
 
-    TODO
+    type alias Foo =
+        { b : Int, a : Int }
+
+    foo : Foo
+    foo =
+        { b = 1, a = 2 }
 
 
 ## Success
 
-    TODO
+    type alias Foo =
+        { a : Int, b : Int }
+
+    foo : Foo
+    foo =
+        { a = 2, b = 1 }
 
 
 ## When (not) to enable this rule
@@ -150,10 +160,10 @@ expressionVisitor node =
                     List.map (Elm.Syntax.Node.value >> Tuple.first >> Elm.Syntax.Node.value) (Elm.Syntax.Node.value recordSetters)
             in
             (if fields == List.sort fields then
-                Elm.Syntax.Node.range recordSetters |> unsortedError |> List.singleton
+                []
 
              else
-                []
+                Elm.Syntax.Node.range recordSetters |> unsortedError |> List.singleton
             )
                 ++ List.concatMap (Elm.Syntax.Node.value >> Tuple.second >> expressionVisitor) (Elm.Syntax.Node.value recordSetters)
     in

@@ -33,16 +33,25 @@ all =
                     """module A exposing (..)
 type alias Record = { b : Int, a : Int }
 
+type alias RecordTwo = { c : Bool }
+
 type WrappedRecord = Record { blue : String, black : { one : Bool, two : Bool, three : Bool } }
 
+getC : RecordTwo -> Bool
+getC {c} = c
+
 getB : { t | b : Int, a : Int }
-getB {b, a} = b"""
+getB {b, a} = b
+
+makeRecordTwo : Bool -> RecordTwo
+makeRecordTwo c = {c = c}
+"""
                         |> Review.Test.run NoUnsortedRecordFields.rule
                         |> Review.Test.expectErrors
                             [ unsortedRecordFieldsError "{ b : Int, a : Int }"
                             , unsortedRecordFieldsError "{ blue : String, black : { one : Bool, two : Bool, three : Bool } }"
                             , unsortedRecordFieldsError " b : Int, a : Int "
-                                |> Review.Test.atExactly { start = { row = 6, column = 13 }, end = { row = 6, column = 31 } }
+                                |> Review.Test.atExactly { start = { row = 11, column = 13 }, end = { row = 11, column = 31 } }
                             , unsortedRecordFieldsError "{b, a}"
                             ]
             ]

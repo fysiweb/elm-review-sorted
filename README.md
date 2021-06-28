@@ -5,8 +5,8 @@ Provides [`elm-review`](https://package.elm-lang.org/packages/jfmengels/elm-revi
 
 ## Provided rules
 
-- [`NoUnsortedConstructors`](TODO) - Reports the use of unsorted `case` patterns and `type` constructors.
-- [`NoUnsortedRecordFields`](TODO) - Reports the use of unsorted record fields.
+- [`NoUnsortedConstructors`](./src/NoUnsortedConstructors.elm) - Reports the use of unsorted `case` patterns and `type` constructors.
+- [`NoUnsortedRecordFields`](./src/NoUnsortedRecordFields.elm) - Reports the use of unsorted record fields.
 
 
 ## Configuration

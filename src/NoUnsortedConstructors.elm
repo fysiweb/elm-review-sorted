@@ -30,12 +30,12 @@ unsortedError =
 
 ## Fail
 
-    TODO
+    data Foo = Baz | Bar | Quux
 
 
 ## Success
 
-    TODO
+    data Foo = Bar | Baz | Quux
 
 
 ## When (not) to enable this rule
