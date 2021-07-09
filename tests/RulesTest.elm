@@ -45,6 +45,27 @@ getB {b, a} = b
 
 makeRecordTwo : Bool -> RecordTwo
 makeRecordTwo c = {c = c}
+
+lambdaFunction : Record -> Int
+lambdaFunction = \\{b, a} -> b
+
+letDestructuring : Record -> Int
+letDestructuring r =
+    let {b, a} = r
+    in b
+
+letFuncSigAndDestructuring : Record -> Int
+letFuncSigAndDestructuring r =
+    let
+        f : { t | b : Int, a : Int } -> Int
+        f {b, a} = b
+    in
+    f r
+
+casePatternMatch : Record -> Int
+casePatternMatch r =
+    case r of
+        {b, a} -> b
 """
                         |> Review.Test.run NoUnsortedRecordFields.rule
                         |> Review.Test.expectErrors
@@ -53,6 +74,17 @@ makeRecordTwo c = {c = c}
                             , unsortedRecordFieldsError " b : Int, a : Int "
                                 |> Review.Test.atExactly { start = { row = 11, column = 13 }, end = { row = 11, column = 31 } }
                             , unsortedRecordFieldsError "{b, a}"
+                                |> Review.Test.atExactly { start = { row = 12, column = 6 }, end = { row = 12, column = 12 } }
+                            , unsortedRecordFieldsError "{b, a}"
+                                |> Review.Test.atExactly { start = { row = 18, column = 19 }, end = { row = 18, column = 25 } }
+                            , unsortedRecordFieldsError "{b, a}"
+                                |> Review.Test.atExactly { start = { row = 22, column = 9 }, end = { row = 22, column = 15 } }
+                            , unsortedRecordFieldsError " b : Int, a : Int "
+                                |> Review.Test.atExactly { start = { row = 28, column = 18 }, end = { row = 28, column = 36 } }
+                            , unsortedRecordFieldsError "{b, a}"
+                                |> Review.Test.atExactly { start = { row = 29, column = 11 }, end = { row = 29, column = 17 } }
+                            , unsortedRecordFieldsError "{b, a}"
+                                |> Review.Test.atExactly { start = { row = 36, column = 9 }, end = { row = 36, column = 15 } }
                             ]
             ]
         , describe "NoUnsortedConstructors"
