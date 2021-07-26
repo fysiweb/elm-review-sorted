@@ -9,16 +9,21 @@ module NoUnsortedConstructors exposing (rule)
 import Elm.Syntax.Declaration exposing (Declaration)
 import Elm.Syntax.Expression exposing (Expression)
 import Elm.Syntax.Node exposing (Node)
-import Elm.Syntax.Pattern exposing (Pattern)
-import Elm.Syntax.Type exposing (Type)
+import Elm.Syntax.Pattern
+import Elm.Syntax.Range exposing (Range)
+import Review.Fix
 import Review.Rule exposing (Error, Rule)
+import Util exposing (declarationToFix, expressionToFix)
 
 
-unsortedError =
-    Review.Rule.error
+unsortedError : Range -> String -> Error {}
+unsortedError range fix =
+    Review.Rule.errorWithFix
         { message = "Sort constructors."
         , details = [ "Constructors have to be sorted in some way, why not alphabetically?" ]
         }
+        range
+        [ Review.Fix.replaceRangeBy range fix ]
 
 
 {-| Reports...
@@ -57,15 +62,25 @@ declarationVisitor node =
     case Elm.Syntax.Node.value node of
         Elm.Syntax.Declaration.CustomTypeDeclaration type_ ->
             let
-                constructors =
-                    List.map (Elm.Syntax.Node.value >> .name >> Elm.Syntax.Node.value) type_.constructors
+                sorted =
+                    List.sortBy
+                        (Elm.Syntax.Node.value
+                            >> .name
+                            >> Elm.Syntax.Node.value
+                        )
+                        type_.constructors
             in
-            if List.sort constructors == constructors then
+            if sorted == type_.constructors then
                 []
 
             else
-                Elm.Syntax.Node.range node
-                    |> unsortedError
+                let
+                    range =
+                        Elm.Syntax.Node.range node
+                in
+                Elm.Syntax.Declaration.CustomTypeDeclaration { type_ | constructors = sorted }
+                    |> declarationToFix range
+                    |> unsortedError range
                     |> List.singleton
 
         _ ->
@@ -75,11 +90,8 @@ declarationVisitor node =
 expressionVisitor : Node Expression -> List (Error {})
 expressionVisitor node =
     case Elm.Syntax.Node.value node of
-        Elm.Syntax.Expression.CaseExpression { cases } ->
+        Elm.Syntax.Expression.CaseExpression ({ cases } as r) ->
             let
-                patterns =
-                    List.map (Tuple.first >> Elm.Syntax.Node.value) cases
-
                 comparePatterns p1 p2 =
                     case ( p1, p2 ) of
                         ( Elm.Syntax.Pattern.NamedPattern name1 ps1, Elm.Syntax.Pattern.NamedPattern name2 ps2 ) ->
@@ -95,12 +107,28 @@ expressionVisitor node =
 
                         ( _, _ ) ->
                             EQ
+
+                sorted =
+                    List.sortWith
+                        (\( p1, _ ) ( p2, _ ) ->
+                            comparePatterns
+                                (Elm.Syntax.Node.value p1)
+                                (Elm.Syntax.Node.value p2)
+                        )
+                        cases
             in
-            if List.sortWith comparePatterns patterns == patterns then
+            if sorted == cases then
                 []
 
             else
-                Elm.Syntax.Node.range node |> unsortedError |> List.singleton
+                let
+                    range =
+                        Elm.Syntax.Node.range node
+                in
+                Elm.Syntax.Expression.CaseExpression { r | cases = sorted }
+                    |> expressionToFix range
+                    |> unsortedError range
+                    |> List.singleton
 
         _ ->
             []

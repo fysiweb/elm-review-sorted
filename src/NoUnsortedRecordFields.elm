@@ -7,13 +7,14 @@ module NoUnsortedRecordFields exposing (rule)
 -}
 
 import Elm.Syntax.Declaration exposing (Declaration)
-import Elm.Syntax.Expression exposing (Expression)
+import Elm.Syntax.Expression exposing (Expression, Function, RecordSetter)
 import Elm.Syntax.Node exposing (Node)
 import Elm.Syntax.Pattern exposing (Pattern)
-import Elm.Syntax.Signature exposing (Signature)
-import Elm.Syntax.Type exposing (Type)
-import Elm.Syntax.TypeAnnotation exposing (TypeAnnotation)
+import Elm.Syntax.Range exposing (Range)
+import Elm.Syntax.TypeAnnotation exposing (RecordDefinition, TypeAnnotation)
+import Review.Fix
 import Review.Rule exposing (Error, Rule)
+import Util exposing (expressionToFix, patternToFix, typeAnnotationToFix)
 
 
 {-| Reports...
@@ -32,6 +33,10 @@ import Review.Rule exposing (Error, Rule)
     foo =
         { b = 1, a = 2 }
 
+    sumFoo : Foo -> Int
+    sumFoo { b, a } =
+        a + b
+
 
 ## Success
 
@@ -41,6 +46,10 @@ import Review.Rule exposing (Error, Rule)
     foo : Foo
     foo =
         { a = 2, b = 1 }
+
+    sumFoo : Foo -> Int
+    sumFoo { a, b } =
+        a + b
 
 
 ## When (not) to enable this rule
@@ -57,78 +66,18 @@ rule =
         |> Review.Rule.fromModuleRuleSchema
 
 
-unsortedError =
-    Review.Rule.error
+unsortedError : Range -> String -> Error {}
+unsortedError range fix =
+    Review.Rule.errorWithFix
         { message = "Sort record fields."
         , details = [ "Record fields have to be sorted in some way, why not alphabetically?" ]
         }
+        range
+        [ Review.Fix.replaceRangeBy range fix ]
 
 
 declarationVisitor : Node Declaration -> List (Error {})
 declarationVisitor node =
-    let
-        recordDefinitionSorted recordDefinition =
-            let
-                fields =
-                    Elm.Syntax.Node.value recordDefinition
-                        |> List.map (Elm.Syntax.Node.value >> Tuple.first >> Elm.Syntax.Node.value)
-            in
-            if List.sort fields == fields then
-                []
-
-            else
-                Elm.Syntax.Node.range recordDefinition |> unsortedError |> List.singleton
-
-        patternSorted pattern =
-            case Elm.Syntax.Node.value pattern of
-                Elm.Syntax.Pattern.RecordPattern record ->
-                    let
-                        fields =
-                            List.map Elm.Syntax.Node.value record
-                    in
-                    if List.sort fields == fields then
-                        []
-
-                    else
-                        Elm.Syntax.Node.range pattern
-                            |> unsortedError
-                            |> List.singleton
-
-                _ ->
-                    []
-
-        typeAnnotationSorted typeAnnotation =
-            case Elm.Syntax.Node.value typeAnnotation of
-                Elm.Syntax.TypeAnnotation.Typed _ annotations ->
-                    List.concatMap typeAnnotationSorted annotations
-
-                Elm.Syntax.TypeAnnotation.Tupled annotations ->
-                    List.concatMap typeAnnotationSorted annotations
-
-                Elm.Syntax.TypeAnnotation.Record record ->
-                    recordDefinitionSorted (Elm.Syntax.Node.map (always record) typeAnnotation)
-
-                Elm.Syntax.TypeAnnotation.GenericRecord _ record ->
-                    recordDefinitionSorted record
-
-                Elm.Syntax.TypeAnnotation.FunctionTypeAnnotation input output ->
-                    typeAnnotationSorted input ++ typeAnnotationSorted output
-
-                _ ->
-                    []
-
-        functionSorted { declaration, signature } =
-            Maybe.withDefault [] (Maybe.map typeAnnotationSorted (Maybe.map (Elm.Syntax.Node.value >> .typeAnnotation) signature))
-                ++ List.concatMap patternSorted (Elm.Syntax.Node.value declaration).arguments
-
-        letDeclarationSorted declaration =
-            case Elm.Syntax.Node.value declaration of
-                Elm.Syntax.Expression.LetFunction function ->
-                    functionSorted function
-
-                Elm.Syntax.Expression.LetDestructuring pattern _ ->
-                    patternSorted pattern
-    in
     case Elm.Syntax.Node.value node of
         Elm.Syntax.Declaration.FunctionDeclaration function ->
             functionSorted function
@@ -154,25 +103,154 @@ declarationVisitor node =
 expressionVisitor : Node Expression -> List (Error {})
 expressionVisitor node =
     let
-        recordSettersSorted recordSetters =
+        recordSettersSorted :
+            (List (Node RecordSetter) -> Expression)
+            -> List (Node RecordSetter)
+            -> List (Error {})
+        recordSettersSorted expr recordSetters =
             let
-                fields =
-                    List.map (Elm.Syntax.Node.value >> Tuple.first >> Elm.Syntax.Node.value) (Elm.Syntax.Node.value recordSetters)
+                sorted =
+                    List.sortBy
+                        (Elm.Syntax.Node.value
+                            >> Tuple.first
+                            >> Elm.Syntax.Node.value
+                        )
+                        recordSetters
             in
-            (if fields == List.sort fields then
+            (if sorted == recordSetters then
                 []
 
              else
-                Elm.Syntax.Node.range recordSetters |> unsortedError |> List.singleton
+                let
+                    range =
+                        Elm.Syntax.Node.range node
+                in
+                expr sorted
+                    |> expressionToFix range
+                    |> unsortedError range
+                    |> List.singleton
             )
-                ++ List.concatMap (Elm.Syntax.Node.value >> Tuple.second >> expressionVisitor) (Elm.Syntax.Node.value recordSetters)
+                ++ List.concatMap
+                    (Elm.Syntax.Node.value
+                        >> Tuple.second
+                        >> expressionVisitor
+                    )
+                    recordSetters
+
+        letDeclarationSorted declaration =
+            case Elm.Syntax.Node.value declaration of
+                Elm.Syntax.Expression.LetFunction function ->
+                    functionSorted function
+
+                Elm.Syntax.Expression.LetDestructuring pattern _ ->
+                    patternSorted pattern
     in
     case Elm.Syntax.Node.value node of
         Elm.Syntax.Expression.RecordExpr recordSetters ->
-            recordSettersSorted (Elm.Syntax.Node.map (always recordSetters) node)
+            recordSettersSorted Elm.Syntax.Expression.RecordExpr recordSetters
 
-        Elm.Syntax.Expression.RecordUpdateExpression _ recordSetters ->
-            recordSettersSorted (Elm.Syntax.Node.map (always recordSetters) node)
+        Elm.Syntax.Expression.RecordUpdateExpression name recordSetters ->
+            recordSettersSorted (Elm.Syntax.Expression.RecordUpdateExpression name) recordSetters
+
+        Elm.Syntax.Expression.LambdaExpression { args } ->
+            List.concatMap patternSorted args
+
+        Elm.Syntax.Expression.LetExpression { declarations } ->
+            List.concatMap letDeclarationSorted declarations
+
+        Elm.Syntax.Expression.CaseExpression { cases } ->
+            List.concatMap (patternSorted << Tuple.first) cases
+
+        _ ->
+            []
+
+
+{-| Helper to check that record fields in a type annotation are sorted, if any
+exist.
+-}
+typeAnnotationSorted : Node TypeAnnotation -> List (Error {})
+typeAnnotationSorted typeAnnotation =
+    let
+        recordDefinitionSorted :
+            (RecordDefinition -> TypeAnnotation)
+            -> RecordDefinition
+            -> List (Error {})
+        recordDefinitionSorted annot fields =
+            let
+                sorted =
+                    List.sortBy
+                        (Elm.Syntax.Node.value
+                            >> Tuple.first
+                            >> Elm.Syntax.Node.value
+                        )
+                        fields
+            in
+            if sorted == fields then
+                []
+
+            else
+                let
+                    range =
+                        Elm.Syntax.Node.range typeAnnotation
+                in
+                annot sorted
+                    |> typeAnnotationToFix range
+                    |> unsortedError range
+                    |> List.singleton
+    in
+    case Elm.Syntax.Node.value typeAnnotation of
+        Elm.Syntax.TypeAnnotation.Typed _ annotations ->
+            List.concatMap typeAnnotationSorted annotations
+
+        Elm.Syntax.TypeAnnotation.Tupled annotations ->
+            List.concatMap typeAnnotationSorted annotations
+
+        Elm.Syntax.TypeAnnotation.Record record ->
+            recordDefinitionSorted Elm.Syntax.TypeAnnotation.Record record
+
+        Elm.Syntax.TypeAnnotation.GenericRecord name record ->
+            Elm.Syntax.Node.value record
+                |> recordDefinitionSorted (\def -> Elm.Syntax.TypeAnnotation.GenericRecord name (Elm.Syntax.Node.map (always def) record))
+
+        Elm.Syntax.TypeAnnotation.FunctionTypeAnnotation input output ->
+            typeAnnotationSorted input ++ typeAnnotationSorted output
+
+        _ ->
+            []
+
+
+{-| Helper to check that a function's type annotation and arguments are sorted,
+if they contain record fields.
+-}
+functionSorted : Function -> List (Error {})
+functionSorted { declaration, signature } =
+    Maybe.withDefault [] (Maybe.map typeAnnotationSorted (Maybe.map (Elm.Syntax.Node.value >> .typeAnnotation) signature))
+        ++ List.concatMap patternSorted (Elm.Syntax.Node.value declaration).arguments
+
+
+{-| Helper to check that a pattern is sorted if it is a record pattern, used by
+both `declarationVisitor` and `expressionVisitor`.
+-}
+patternSorted : Node Pattern -> List (Error {})
+patternSorted pattern =
+    case Elm.Syntax.Node.value pattern of
+        Elm.Syntax.Pattern.RecordPattern record ->
+            let
+                sorted =
+                    List.sortBy Elm.Syntax.Node.value record
+            in
+            if sorted == record then
+                []
+
+            else
+                let
+                    range =
+                        Elm.Syntax.Node.range pattern
+                in
+                Elm.Syntax.Pattern.RecordPattern sorted
+                    |> patternToFix range
+                    |> unsortedError range
+                    |> List.singleton
 
         _ ->
             []
