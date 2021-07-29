@@ -1,4 +1,4 @@
-module Util exposing (declarationToFix, expressionToFix, patternToFix, typeAnnotationToFix)
+module Util exposing (declarationToFix, expressionToFix, patternToFix, stableSort, typeAnnotationToFix)
 
 import Elm.Syntax.Declaration exposing (Declaration)
 import Elm.Syntax.Expression exposing (Expression)
@@ -7,6 +7,33 @@ import Elm.Syntax.Pattern exposing (Pattern)
 import Elm.Syntax.Range exposing (Range)
 import Elm.Syntax.TypeAnnotation exposing (TypeAnnotation)
 import Elm.Writer
+
+
+{-| Sort a list stably and return the sorted version or `Nothing` if it is
+already sorted. This does not require checking equality of `a`.
+-}
+stableSort : (a -> a -> Order) -> List a -> Maybe (List a)
+stableSort comp xs =
+    let
+        withIndex =
+            List.indexedMap Tuple.pair xs
+
+        stableCompare ( i1, x1 ) ( i2, x2 ) =
+            case comp x1 x2 of
+                EQ ->
+                    compare i1 i2
+
+                ltOrGt ->
+                    ltOrGt
+
+        sorted =
+            List.sortWith stableCompare withIndex
+    in
+    if List.map Tuple.first sorted == List.map Tuple.first withIndex then
+        Nothing
+
+    else
+        Just (List.map Tuple.second sorted)
 
 
 expressionToFix : Range -> Expression -> String

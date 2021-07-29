@@ -13,7 +13,7 @@ import Elm.Syntax.Pattern
 import Elm.Syntax.Range exposing (Range)
 import Review.Fix
 import Review.Rule exposing (Error, Rule)
-import Util exposing (declarationToFix, expressionToFix)
+import Util exposing (declarationToFix, expressionToFix, stableSort)
 
 
 unsortedError : Range -> String -> Error {}
@@ -62,26 +62,30 @@ declarationVisitor node =
     case Elm.Syntax.Node.value node of
         Elm.Syntax.Declaration.CustomTypeDeclaration type_ ->
             let
-                sorted =
-                    List.sortBy
-                        (Elm.Syntax.Node.value
-                            >> .name
-                            >> Elm.Syntax.Node.value
+                compareConstructors d1 d2 =
+                    compare
+                        (Elm.Syntax.Node.value d1
+                            |> .name
+                            |> Elm.Syntax.Node.value
                         )
-                        type_.constructors
+                        (Elm.Syntax.Node.value d2
+                            |> .name
+                            |> Elm.Syntax.Node.value
+                        )
             in
-            if sorted == type_.constructors then
-                []
-
-            else
-                let
-                    range =
-                        Elm.Syntax.Node.range node
-                in
-                Elm.Syntax.Declaration.CustomTypeDeclaration { type_ | constructors = sorted }
-                    |> declarationToFix range
-                    |> unsortedError range
-                    |> List.singleton
+            stableSort compareConstructors type_.constructors
+                |> Maybe.map
+                    (\sorted ->
+                        let
+                            range =
+                                Elm.Syntax.Node.range node
+                        in
+                        Elm.Syntax.Declaration.CustomTypeDeclaration { type_ | constructors = sorted }
+                            |> declarationToFix range
+                            |> unsortedError range
+                            |> List.singleton
+                    )
+                |> Maybe.withDefault []
 
         _ ->
             []
@@ -108,27 +112,22 @@ expressionVisitor node =
                         ( _, _ ) ->
                             EQ
 
-                sorted =
-                    List.sortWith
-                        (\( p1, _ ) ( p2, _ ) ->
-                            comparePatterns
-                                (Elm.Syntax.Node.value p1)
-                                (Elm.Syntax.Node.value p2)
-                        )
-                        cases
+                compareCase ( p1, _ ) ( p2, _ ) =
+                    comparePatterns (Elm.Syntax.Node.value p1) (Elm.Syntax.Node.value p2)
             in
-            if sorted == cases then
-                []
-
-            else
-                let
-                    range =
-                        Elm.Syntax.Node.range node
-                in
-                Elm.Syntax.Expression.CaseExpression { r | cases = sorted }
-                    |> expressionToFix range
-                    |> unsortedError range
-                    |> List.singleton
+            stableSort compareCase cases
+                |> Maybe.map
+                    (\sorted ->
+                        let
+                            range =
+                                Elm.Syntax.Node.range node
+                        in
+                        Elm.Syntax.Expression.CaseExpression { r | cases = sorted }
+                            |> expressionToFix range
+                            |> unsortedError range
+                            |> List.singleton
+                    )
+                |> Maybe.withDefault []
 
         _ ->
             []

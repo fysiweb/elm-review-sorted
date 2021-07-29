@@ -14,7 +14,7 @@ import Elm.Syntax.Range exposing (Range)
 import Elm.Syntax.TypeAnnotation exposing (RecordDefinition, TypeAnnotation)
 import Review.Fix
 import Review.Rule exposing (Error, Rule)
-import Util exposing (expressionToFix, patternToFix, typeAnnotationToFix)
+import Util exposing (expressionToFix, patternToFix, stableSort, typeAnnotationToFix)
 
 
 {-| Reports...
@@ -109,26 +109,30 @@ expressionVisitor node =
             -> List (Error {})
         recordSettersSorted expr recordSetters =
             let
-                sorted =
-                    List.sortBy
-                        (Elm.Syntax.Node.value
-                            >> Tuple.first
-                            >> Elm.Syntax.Node.value
+                compareSetters d1 d2 =
+                    compare
+                        (Elm.Syntax.Node.value d1
+                            |> Tuple.first
+                            |> Elm.Syntax.Node.value
                         )
-                        recordSetters
+                        (Elm.Syntax.Node.value d2
+                            |> Tuple.first
+                            |> Elm.Syntax.Node.value
+                        )
             in
-            (if sorted == recordSetters then
-                []
-
-             else
-                let
-                    range =
-                        Elm.Syntax.Node.range node
-                in
-                expr sorted
-                    |> expressionToFix range
-                    |> unsortedError range
-                    |> List.singleton
+            (stableSort compareSetters recordSetters
+                |> Maybe.map
+                    (\sorted ->
+                        let
+                            range =
+                                Elm.Syntax.Node.range node
+                        in
+                        expr sorted
+                            |> expressionToFix range
+                            |> unsortedError range
+                            |> List.singleton
+                    )
+                |> Maybe.withDefault []
             )
                 ++ List.concatMap
                     (Elm.Syntax.Node.value
@@ -177,26 +181,30 @@ typeAnnotationSorted typeAnnotation =
             -> List (Error {})
         recordDefinitionSorted annot fields =
             let
-                sorted =
-                    List.sortBy
-                        (Elm.Syntax.Node.value
-                            >> Tuple.first
-                            >> Elm.Syntax.Node.value
+                compareFields d1 d2 =
+                    compare
+                        (Elm.Syntax.Node.value d1
+                            |> Tuple.first
+                            |> Elm.Syntax.Node.value
                         )
-                        fields
+                        (Elm.Syntax.Node.value d2
+                            |> Tuple.first
+                            |> Elm.Syntax.Node.value
+                        )
             in
-            if sorted == fields then
-                []
-
-            else
-                let
-                    range =
-                        Elm.Syntax.Node.range typeAnnotation
-                in
-                annot sorted
-                    |> typeAnnotationToFix range
-                    |> unsortedError range
-                    |> List.singleton
+            stableSort compareFields fields
+                |> Maybe.map
+                    (\sorted ->
+                        let
+                            range =
+                                Elm.Syntax.Node.range typeAnnotation
+                        in
+                        annot sorted
+                            |> typeAnnotationToFix range
+                            |> unsortedError range
+                            |> List.singleton
+                    )
+                |> Maybe.withDefault []
     in
     case Elm.Syntax.Node.value typeAnnotation of
         Elm.Syntax.TypeAnnotation.Typed _ annotations ->
@@ -236,21 +244,24 @@ patternSorted pattern =
     case Elm.Syntax.Node.value pattern of
         Elm.Syntax.Pattern.RecordPattern record ->
             let
-                sorted =
-                    List.sortBy Elm.Syntax.Node.value record
+                compareRecord d1 d2 =
+                    compare
+                        (Elm.Syntax.Node.value d1)
+                        (Elm.Syntax.Node.value d2)
             in
-            if sorted == record then
-                []
-
-            else
-                let
-                    range =
-                        Elm.Syntax.Node.range pattern
-                in
-                Elm.Syntax.Pattern.RecordPattern sorted
-                    |> patternToFix range
-                    |> unsortedError range
-                    |> List.singleton
+            stableSort compareRecord record
+                |> Maybe.map
+                    (\sorted ->
+                        let
+                            range =
+                                Elm.Syntax.Node.range pattern
+                        in
+                        Elm.Syntax.Pattern.RecordPattern sorted
+                            |> patternToFix range
+                            |> unsortedError range
+                            |> List.singleton
+                    )
+                |> Maybe.withDefault []
 
         _ ->
             []
