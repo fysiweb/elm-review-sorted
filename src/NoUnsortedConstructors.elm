@@ -46,7 +46,7 @@ unsortedError range fix =
 ## When (not) to enable this rule
 
 This rule is useful when you want to enforce sorting type constructors.
-THis rule is not useful when you don't.
+This rule is not useful when you don't.
 
 -}
 rule : Rule
